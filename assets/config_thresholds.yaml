@@ -1,0 +1,3 @@
+smoothing_alpha: 0.6
+alert_thresh: 0.65
+strong_thresh: 0.80

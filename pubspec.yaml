@@ -1,0 +1,52 @@
+
+name: pet_mood_radar
+description: Pet Mood Radar — v1.2 (i18n + icon integrated)
+publish_to: "none"
+version: 1.2.0+12
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  mic_stream: ^0.7.1
+  flutter_radar_chart: ^0.2.1
+  path_provider: ^2.1.3
+  shared_preferences: ^2.2.3
+  camera: ^0.10.6
+  permission_handler: ^11.3.1
+  flutter_local_notifications: ^17.2.2
+  yaml: ^3.1.2
+  url_launcher: ^6.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/config_thresholds.yaml
+    - assets/policy/privacy_ru.md
+    - assets/policy/privacy_en.md
+    - assets/policy/privacy_lv.md
+    - assets/policy/privacy_de.md
+    - assets/policy/privacy_es.md
+    - assets/policy/privacy_pt.md
+    - assets/policy/terms_ru.md
+    - assets/policy/terms_en.md
+    - assets/policy/terms_lv.md
+    - assets/policy/terms_de.md
+    - assets/policy/terms_es.md
+    - assets/policy/terms_pt.md

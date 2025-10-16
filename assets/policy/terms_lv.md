@@ -1,0 +1,1 @@
+Novērtējums, nevis medicīnisks padoms. Precizitāte atkarīga no apstākļiem.

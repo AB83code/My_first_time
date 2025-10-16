@@ -1,0 +1,13 @@
+
+.dart_tool/
+.packages
+build/
+pubspec.lock
+android/.gradle/
+android/local.properties
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+.vscode/
+.idea/
+.DS_Store

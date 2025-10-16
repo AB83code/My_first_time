@@ -1,0 +1,1 @@
+Estimación de estado, no consejo médico. Precisión depende de condiciones/animal.

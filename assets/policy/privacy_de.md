@@ -1,0 +1,1 @@
+Audio/Video werden auf dem Gerät verarbeitet. Keine Rohdaten-Speicherung. Export nur mit Zustimmung.

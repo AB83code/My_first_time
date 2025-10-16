@@ -1,0 +1,1 @@
+Audio/video ierīcē. Pēc noklusējuma nav izejas ierakstu. Eksports tikai ar piekrišanu.

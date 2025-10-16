@@ -1,0 +1,1 @@
+State estimation, not medical advice. Accuracy depends on conditions/animal.

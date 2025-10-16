@@ -1,0 +1,1 @@
+Audio/vídeo se procesa en el dispositivo. No guardamos brutos. Exportación solo con consentimiento.

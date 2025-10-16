@@ -1,0 +1,1 @@
+Áudio/vídeo processados no dispositivo. Sem armazenamento bruto. Exportação apenas com consentimento.

@@ -1,0 +1,1 @@
+Zustandsschätzung, keine medizinische Beratung. Genauigkeit abhängig von Bedingungen/Tier.
