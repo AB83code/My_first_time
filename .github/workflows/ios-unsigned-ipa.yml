@@ -1,33 +1,26 @@
-name: iOS unsigned IPA (stable+robust)
+name: iOS unsigned IPA (no signing)
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-14
-
+    runs-on: macos-14  # Apple Silicon (arm64)
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Flutter (stable)
+      # ✅ Пинним Flutter и архитектуру arm64 для macos-14
+      - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: 'stable'
+          flutter-version: '3.22.2'   # зафиксируй стабильную версию (можно 3.22.x/3.24.x, если знаешь точную)
+          architecture: 'arm64'
           cache: true
 
-      - name: Versions
-        run: |
-          flutter --version
-          dart --version
-          xcodebuild -version || true
-          sw_vers
+      - name: flutter --version
+        run: flutter --version
 
-      - name: Ensure iOS/Android scaffolding
-        run: |
-          flutter create .
-          # иногда полезно «освежить» ios-папку
-          rm -rf ios/Flutter/Flutter.podspec || true
+      - name: Generate iOS/Android folders
+        run: flutter create .
 
       - name: Patch Info.plist & bundle id
         run: |
@@ -37,71 +30,22 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string audio' ios/Runner/Info.plist || true
           sed -i.bak -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = com.petmood.radar;/g' ios/Runner.xcodeproj/project.pbxproj || true
 
-      - name: Set iOS deployment target (Podfile = 13.0)
-        run: |
-          cat > ios/Podfile <<'POD'
-          platform :ios, '13.0'
-          use_frameworks!
-          use_modular_headers!
-
-          target 'Runner' do
-            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
-          end
-
-          post_install do |installer|
-            installer.pods_project.targets.each do |target|
-              target.build_configurations.each do |config|
-                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
-              end
-            end
-          end
-          POD
-
-      - name: Install Ruby & CocoaPods
-        run: |
-          sudo gem install cocoapods -N
-          pod --version
-
-      - name: Flutter pub get
+      - name: flutter pub get
         run: flutter pub get
 
+      # автогенерация иконок (мы добавляли ранее)
       - name: Generate app icons
-        run: flutter pub run flutter_launcher_icons
-
-      - name: CocoaPods install (with retries)
-        working-directory: ios
-        shell: bash
         run: |
-          set -e
-          tries=0
-          until [ $tries -ge 3 ]; do
-            pod repo update && pod install && break
-            tries=$((tries+1))
-            echo "Retry $tries in 15s..."
-            sleep 15
-          done
-          pod deintegrate || true
-          pod install
+          flutter pub run flutter_launcher_icons
 
-      - name: Clean flutter build
-        run: flutter clean
-
-      - name: Build iOS (no codesign)
-        run: flutter build ios --release --no-codesign
-
-      - name: Package unsigned IPA
+      # на всякий случай: CocoaPods (иногда зеркало тупит; шаг помечен || true)
+      - name: CocoaPods install
         run: |
-          APP_PATH=$(find build/ios -type d -name "Runner.app" | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH="build/ios/iphoneos/Runner.app"
-          fi
-          echo "Using APP_PATH=$APP_PATH"
-          mkdir -p Payload
-          cp -R "$APP_PATH" Payload/Runner.app
-          zip -r PetMoodRadar-unsigned.ipa Payload
+          cd ios
+          pod install --repo-update || true
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: PetMoodRadar-unsigned-ipa
-          path: PetMoodRadar-unsigned.ipa
+      - name: Build .app (no codesign)
+        run: |
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner -configuration Release -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_S_
