@@ -4,15 +4,15 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14  # Apple Silicon (arm64)
+    runs-on: macos-14   # Apple Silicon (arm64) runner
     steps:
       - uses: actions/checkout@v4
 
-      # ✅ Пинним Flutter и архитектуру arm64 для macos-14
+      # Пинним Flutter + архитектуру arm64 (исправляет ошибку определения версии)
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.2'   # зафиксируй стабильную версию (можно 3.22.x/3.24.x, если знаешь точную)
+          flutter-version: '3.22.2'
           architecture: 'arm64'
           cache: true
 
@@ -33,19 +33,38 @@ jobs:
       - name: flutter pub get
         run: flutter pub get
 
-      # автогенерация иконок (мы добавляли ранее)
+      # Автогенерация иконок из assets/icon.png (мы её уже добавили)
       - name: Generate app icons
         run: |
           flutter pub run flutter_launcher_icons
 
-      # на всякий случай: CocoaPods (иногда зеркало тупит; шаг помечен || true)
+      # (необязательно, но помогает, если зеркала CocoaPods глючат)
       - name: CocoaPods install
         run: |
           cd ios
           pod install --repo-update || true
 
+      # для диагностики окружения Xcode
+      - name: Show Xcode + SDKs
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+
+      # ✅ фикс: одна строка, без слэшей; явно задаём destination и флаги подписи
       - name: Build .app (no codesign)
         run: |
-          xcodebuild -workspace ios/Runner.xcworkspace \
-            -scheme Runner -configuration Release -sdk iphoneos \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_S_
+          set -e
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY= CODE_SIGNING_STYLE=Manual
+
+      - name: Package IPA
+        run: |
+          APP_PATH=$(find build/ios -type d -name "Runner.app" | head -n 1)
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/Runner.app
+          zip -r PetMoodRadar-unsigned.ipa Payload
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PetMoodRadar-unsigned-ipa
+          path: PetMoodRadar-unsigned.ipa
