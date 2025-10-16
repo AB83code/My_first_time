@@ -1,4 +1,4 @@
-name: iOS unsigned IPA (bulletproof)
+name: iOS unsigned IPA (bulletproof-fallback)
 on:
   workflow_dispatch:
 
@@ -10,11 +10,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 👇 фикс: пинним точную версию Flutter под arm64
+      # Пинним стабильную версию Flutter под macOS arm64
       - name: Install Flutter (3.35.0 stable)
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.0'   # <-- ключевой фикс
+          flutter-version: '3.35.0'
           channel: stable
           cache: true
 
@@ -26,6 +26,7 @@ jobs:
           xcodebuild -version || true
           sw_vers
 
+      # Создаём ios/android каталоги с валидным именем проекта
       - name: Ensure iOS/Android scaffolding
         run: flutter create --project-name my_first_time .
 
@@ -39,7 +40,6 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string audio' "$PLIST" || true
           sed -i.bak -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = com.petmood.radar;/g' ios/Runner.xcodeproj/project.pbxproj || true
 
-      # Аккуратно фиксируем iOS 13.0 в Podfile
       - name: Set iOS deployment target = 13.0 in Podfile
         run: |
           set -e
@@ -90,12 +90,56 @@ jobs:
       - name: Clean build
         run: flutter clean
 
-      # 👇 Собираем готовый .ipa — без ручного find/zip
+      # 1) Пытаемся собрать готовый .ipa
       - name: Build unsigned IPA (Flutter)
-        run: flutter build ipa --release --no-codesign
+        run: flutter build ipa --release --no-codesign || true
+
+      # 2) Если .ipa не появился — fallback: собрать .app и упаковать вручную
+      - name: Fallback package .app -> .ipa (if needed)
+        shell: bash
+        run: |
+          set -e
+          if ls build/ios/ipa/*.ipa 1> /dev/null 2>&1; then
+            echo "IPA already exists — fallback not needed."
+            exit 0
+          fi
+          echo "No IPA in build/ios/ipa — building .app then packaging manually..."
+          flutter build ios --release --no-codesign
+          APP_PATH=$(find build/ios -type d -name "Runner.app" | head -n 1 || true)
+          if [ -z "$APP_PATH" ]; then
+            # альтернативный путь Flutter
+            if [ -d "build/ios/iphoneos/Runner.app" ]; then
+              APP_PATH="build/ios/iphoneos/Runner.app"
+            fi
+          fi
+          if [ -z "$APP_PATH" ]; then
+            echo "Runner.app not found — abort."
+            exit 1
+          fi
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/Runner.app
+          zip -qry PetMoodRadar-unsigned.ipa Payload
+          echo "Manual IPA created at $(pwd)/PetMoodRadar-unsigned.ipa"
+
+      # 3) Находим реальный путь IPA и загружаем артефакт
+      - name: Find IPA path
+        id: findipa
+        shell: bash
+        run: |
+          set -e
+          IPA=$(ls -1 build/ios/ipa/*.ipa 2>/dev/null || true)
+          if [ -z "$IPA" ] && [ -f "PetMoodRadar-unsigned.ipa" ]; then
+            IPA="PetMoodRadar-unsigned.ipa"
+          fi
+          if [ -z "$IPA" ]; then
+            echo "No IPA found"; exit 1
+          fi
+          echo "ipa=$IPA" >> $GITHUB_OUTPUT
+          echo "Found IPA: $IPA"
 
       - name: Upload artifact (.ipa)
         uses: actions/upload-artifact@v4
         with:
           name: PetMoodRadar-unsigned-ipa
-          path: build/ios/ipa/*.ipa
+          path: ${{ steps.findipa.outputs.ipa }}
