@@ -1,4 +1,4 @@
-name: iOS unsigned IPA (stable & robust)
+name: iOS unsigned IPA (bulletproof)
 on:
   workflow_dispatch:
 
@@ -10,13 +10,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Flutter (stable)
+      # 👇 фикс: пинним точную версию Flutter под arm64
+      - name: Install Flutter (3.35.0 stable)
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: 'stable'
+          flutter-version: '3.35.0'   # <-- ключевой фикс
+          channel: stable
           cache: true
 
-      - name: Disable Flutter analytics & show versions
+      - name: Disable analytics & show versions
         run: |
           flutter config --no-analytics
           flutter --version
@@ -25,33 +27,30 @@ jobs:
           sw_vers
 
       - name: Ensure iOS/Android scaffolding
-        run: flutter create .
+        run: flutter create --project-name my_first_time .
 
       - name: Patch Info.plist & bundle id
         run: |
-          # Usage descriptions
-          /usr/libexec/PlistBuddy -c 'Add :NSMicrophoneUsageDescription string "Analyze pet sounds on-device."' ios/Runner/Info.plist || true
-          /usr/libexec/PlistBuddy -c 'Add :NSCameraUsageDescription string "Analyze pet facial expressions on-device."' ios/Runner/Info.plist || true
-          # Background audio mode
-          /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes array' ios/Runner/Info.plist || true
-          /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string audio' ios/Runner/Info.plist || true
-          # Bundle id (можешь поменять на свой)
+          set -e
+          PLIST="ios/Runner/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Add :NSMicrophoneUsageDescription string "Analyze pet sounds on-device."' "$PLIST" || true
+          /usr/libexec/PlistBuddy -c 'Add :NSCameraUsageDescription string "Analyze pet facial expressions on-device."' "$PLIST" || true
+          /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes array' "$PLIST" || true
+          /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string audio' "$PLIST" || true
           sed -i.bak -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = com.petmood.radar;/g' ios/Runner.xcodeproj/project.pbxproj || true
 
-      - name: Force iOS deployment target = 13.0 (Podfile)
+      # Аккуратно фиксируем iOS 13.0 в Podfile
+      - name: Set iOS deployment target = 13.0 in Podfile
         run: |
-          cat > ios/Podfile <<'POD'
-          platform :ios, '13.0'
-          use_frameworks!
-          use_modular_headers!
-
-          # Standard Flutter pods installer
-          require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), File.dirname(`which flutter`))
-          flutter_ios_podfile_setup
-
-          target 'Runner' do
-            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
-          end
+          set -e
+          PODFILE="ios/Podfile"
+          if grep -qE "^platform :ios" "$PODFILE"; then
+            sed -i.bak -E "s/^platform :ios, '[0-9.]+'$/platform :ios, '13.0'/" "$PODFILE" || true
+          else
+            sed -i.bak "1i platform :ios, '13.0'" "$PODFILE" || true
+          fi
+          if ! grep -q "post_install do |installer|" "$PODFILE"; then
+            cat >> "$PODFILE" <<'POST'
 
           post_install do |installer|
             installer.pods_project.targets.each do |target|
@@ -60,7 +59,8 @@ jobs:
               end
             end
           end
-          POD
+          POST
+          fi
 
       - name: Install CocoaPods
         run: |
@@ -70,10 +70,10 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Generate app icons
-        run: flutter pub run flutter_launcher_icons
+      - name: Generate app icons (non-fatal)
+        run: flutter pub run flutter_launcher_icons || true
 
-      - name: CocoaPods install (with retries)
+      - name: CocoaPods install (retry-friendly)
         working-directory: ios
         shell: bash
         run: |
@@ -85,12 +85,12 @@ jobs:
             echo "Retry $tries in 20s..."
             sleep 20
           done
-          # финальная попытка
           pod install
 
       - name: Clean build
         run: flutter clean
 
+      # 👇 Собираем готовый .ipa — без ручного find/zip
       - name: Build unsigned IPA (Flutter)
         run: flutter build ipa --release --no-codesign
 
