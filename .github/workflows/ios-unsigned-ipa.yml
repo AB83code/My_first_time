@@ -1,70 +1,101 @@
-name: iOS unsigned IPA (no signing)
+name: iOS unsigned IPA (stable & robust)
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-14   # Apple Silicon (arm64) runner
-    steps:
-      - uses: actions/checkout@v4
+    runs-on: macos-14
 
-      # Пинним Flutter + архитектуру arm64 (исправляет ошибку определения версии)
-      - name: Install Flutter
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter (stable)
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.2'
-          architecture: 'arm64'
+          flutter-version: 'stable'
           cache: true
 
-      - name: flutter --version
-        run: flutter --version
+      - name: Disable Flutter analytics & show versions
+        run: |
+          flutter config --no-analytics
+          flutter --version
+          dart --version
+          xcodebuild -version || true
+          sw_vers
 
-      - name: Generate iOS/Android folders
+      - name: Ensure iOS/Android scaffolding
         run: flutter create .
 
       - name: Patch Info.plist & bundle id
         run: |
+          # Usage descriptions
           /usr/libexec/PlistBuddy -c 'Add :NSMicrophoneUsageDescription string "Analyze pet sounds on-device."' ios/Runner/Info.plist || true
           /usr/libexec/PlistBuddy -c 'Add :NSCameraUsageDescription string "Analyze pet facial expressions on-device."' ios/Runner/Info.plist || true
+          # Background audio mode
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes array' ios/Runner/Info.plist || true
           /usr/libexec/PlistBuddy -c 'Add :UIBackgroundModes:0 string audio' ios/Runner/Info.plist || true
+          # Bundle id (можешь поменять на свой)
           sed -i.bak -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/PRODUCT_BUNDLE_IDENTIFIER = com.petmood.radar;/g' ios/Runner.xcodeproj/project.pbxproj || true
 
-      - name: flutter pub get
+      - name: Force iOS deployment target = 13.0 (Podfile)
+        run: |
+          cat > ios/Podfile <<'POD'
+          platform :ios, '13.0'
+          use_frameworks!
+          use_modular_headers!
+
+          # Standard Flutter pods installer
+          require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), File.dirname(`which flutter`))
+          flutter_ios_podfile_setup
+
+          target 'Runner' do
+            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+          end
+
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+              end
+            end
+          end
+          POD
+
+      - name: Install CocoaPods
+        run: |
+          sudo gem install cocoapods -N
+          pod --version
+
+      - name: Flutter pub get
         run: flutter pub get
 
-      # Автогенерация иконок из assets/icon.png (мы её уже добавили)
       - name: Generate app icons
-        run: |
-          flutter pub run flutter_launcher_icons
+        run: flutter pub run flutter_launcher_icons
 
-      # (необязательно, но помогает, если зеркала CocoaPods глючат)
-      - name: CocoaPods install
-        run: |
-          cd ios
-          pod install --repo-update || true
-
-      # для диагностики окружения Xcode
-      - name: Show Xcode + SDKs
-        run: |
-          xcodebuild -version
-          xcodebuild -showsdks
-
-      # ✅ фикс: одна строка, без слэшей; явно задаём destination и флаги подписи
-      - name: Build .app (no codesign)
+      - name: CocoaPods install (with retries)
+        working-directory: ios
+        shell: bash
         run: |
           set -e
-          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY= CODE_SIGNING_STYLE=Manual
+          tries=0
+          until [ $tries -ge 3 ]; do
+            pod repo update && pod install && break
+            tries=$((tries+1))
+            echo "Retry $tries in 20s..."
+            sleep 20
+          done
+          # финальная попытка
+          pod install
 
-      - name: Package IPA
-        run: |
-          APP_PATH=$(find build/ios -type d -name "Runner.app" | head -n 1)
-          mkdir -p Payload
-          cp -R "$APP_PATH" Payload/Runner.app
-          zip -r PetMoodRadar-unsigned.ipa Payload
+      - name: Clean build
+        run: flutter clean
 
-      - name: Upload artifact
+      - name: Build unsigned IPA (Flutter)
+        run: flutter build ipa --release --no-codesign
+
+      - name: Upload artifact (.ipa)
         uses: actions/upload-artifact@v4
         with:
           name: PetMoodRadar-unsigned-ipa
-          path: PetMoodRadar-unsigned.ipa
+          path: build/ios/ipa/*.ipa
